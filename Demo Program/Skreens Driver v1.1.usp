@@ -1,0 +1,269 @@
+// Copyright (c) 2012-2017 Skreens Entertainment Technologies Incorporated - http://skreens.com
+// 
+// Redistribution and use in source and binary forms, with or without modification, are
+// permitted provided that the following conditions are met:
+// 
+// Redistributions of source code must retain the above copyright notice, this list of
+// conditions and the following disclaimer.
+// 
+// Redistributions in binary form must reproduce the above copyright notice, this list of
+// conditions and the following disclaimer in the documentation and/or other materials
+// provided with the distribution.
+// 
+// Neither the name of Skreens Entertainment Technologies Incorporated nor the names of its
+// contributors may be used to endorse or promote products derived from this software without
+// specific prior written permission.
+// 
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
+// OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+// AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+// IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+// OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+// --- Compiler Directives --------------------------------------------------
+
+#DEFAULT_VOLATILE
+#ENABLE_STACK_CHECKING
+#ENABLE_TRACE
+
+#USER_SIMPLSHARP_LIBRARY "SkreensLib"
+
+// --- Inputs ---------------------------------------------------------------
+
+DIGITAL_INPUT Enable_Debug, Connect;
+DIGITAL_INPUT Get_Layouts, Clear;
+DIGITAL_INPUT Cursor_Up, Cursor_Down, Cursor_Left, Cursor_Right, Cursor_Select, Exit;
+DIGITAL_INPUT Get_Mixer_Levels, Mixer_Take_New_Levels;
+ANALOG_INPUT  Select_Layout;
+STRING_INPUT  Host_Address_In[255];
+
+DIGITAL_INPUT Show_Screen[5];
+ANALOG_INPUT  Mixer_Level_In[4];
+// BUFFER_INPUT 
+
+// --- Outputs --------------------------------------------------------------
+
+DIGITAL_OUTPUT Connect_Fb, Get_Layouts_Busy_Fb, Get_Mixer_Levels_Busy_Fb;
+ANALOG_OUTPUT  Layout_Count, Select_Layout_Fb;
+
+DIGITAL_OUTPUT Show_Screen_Fb[5];
+ANALOG_OUTPUT  Mixer_Level_Fb[4];
+STRING_OUTPUT  Layout_Name[100];
+
+// --- Parameters -----------------------------------------------------------
+
+// INTEGER_PARAMETER
+// SIGNED_INTEGER_PARAMETER
+// LONG_INTEGER_PARAMETER
+// SIGNED_LONG_INTEGER_PARAMETER
+// STRING_PARAMETER HostAddress[255];
+STRING_PARAMETER ScreenName[5][255];
+
+// --- Global Variables -----------------------------------------------------
+
+INTEGER nCurrentLayout, nCurrentScreen;
+// LONG_INTEGER
+// SIGNED_INTEGER
+// SIGNED_LONG_INTEGER
+// STRING HostAddress[255];
+
+SkreensBox myBox;
+
+// --- Functions ------------------------------------------------------------
+
+// --- Callbacks ------------------------------------------------------------
+
+// --- Event Handlers -------------------------------------------------------
+
+CHANGE Host_Address_In
+{
+	myBox.Initialize(Host_Address_In);
+}
+
+PUSH Enable_Debug
+{
+	myBox.Debug(1);
+}
+
+RELEASE Enable_Debug
+{
+	myBox.Debug(0);
+}
+
+PUSH Connect
+{
+	myBox.Connect();
+}
+
+RELEASE Connect
+{
+	myBox.Disconnect();
+}
+
+THREADSAFE PUSH Get_Layouts
+{
+	INTEGER i;
+	
+	Get_Layouts_Busy_Fb = 1;
+	
+	myBox.GetLayouts();
+	Layout_Count = myBox.layoutCount;
+	
+	For (i = 1 To 100)
+	{
+		If (i > myBox.layoutCount)
+		{
+			Layout_Name[i] = "";
+		}
+		Else
+		{
+			Layout_Name[i] = myBox.layoutName[i - 1];
+		}
+	}
+	
+	Select_Layout_Fb = myBox.GetActiveLayout() + 1;
+	
+	Get_Layouts_Busy_Fb = 0;
+}
+
+PUSH Clear
+{
+	INTEGER i;
+	
+	Layout_Count = 0;
+	
+	For (i = 1 To 100)
+	{
+		Layout_Name[i] = "";
+	}
+	
+	Select_Layout_Fb = 0;
+}
+
+THREADSAFE CHANGE Select_Layout
+{
+	nCurrentLayout = Select_Layout;
+
+	If (nCurrentLayout > 0)
+	{
+		myBox.SelectLayout(nCurrentLayout - 1);
+		Select_Layout_Fb = nCurrentLayout;
+		SetArray(Show_Screen_Fb, 0);
+	}
+}
+
+THREADSAFE PUSH Show_Screen
+{
+	nCurrentScreen = GetLastModifiedArrayIndex();
+	
+	myBox.ShowScreen(ScreenName[nCurrentScreen]);
+	
+	SetArray(Show_Screen_Fb, 0);
+	Show_Screen_Fb[nCurrentScreen] = 1;
+}
+
+THREADSAFE PUSH Cursor_Up
+{
+	myBox.Cursor(1);
+}
+
+THREADSAFE PUSH Cursor_Down
+{
+	myBox.Cursor(2);
+}
+
+THREADSAFE PUSH Cursor_Left
+{
+	If (ScreenName[nCurrentScreen] = "layouts")
+	{
+		myBox.Cursor(3);
+	}
+	Else
+	{
+		myBox.Cursor(6);
+	}
+}
+
+THREADSAFE PUSH Cursor_Right
+{
+	If (ScreenName[nCurrentScreen] = "layouts")
+	{
+		myBox.Cursor(4);
+	}
+	Else
+	{
+		myBox.Cursor(7);
+	}
+}
+
+THREADSAFE PUSH Cursor_Select
+{
+	If (ScreenName[nCurrentScreen] = "status")
+	{
+		myBox.Cursor(9);
+		SetArray(Show_Screen_Fb, 0);
+		nCurrentScreen = 0;
+	}
+	Else If (ScreenName[nCurrentScreen] = "info")
+	{
+		myBox.Cursor(8);
+	}
+	Else
+	{
+		myBox.Cursor(5);
+	}
+}
+
+THREADSAFE PUSH Exit
+{
+	myBox.Cursor(9);
+	SetArray(Show_Screen_Fb, 0);
+	nCurrentScreen = 0;
+}
+
+THREADSAFE PUSH Get_Mixer_Levels
+{
+	INTEGER i;
+	
+	Get_Mixer_Levels_Busy_Fb = 1;
+	
+	myBox.GetMixerLevels();
+	
+	For (i = 1 To 4)
+	{
+		Mixer_Level_Fb[i] = myBox.mixerLevels[i - 1];
+	}
+
+	Get_Mixer_Levels_Busy_Fb = 0;
+}
+
+CHANGE Mixer_Level_In
+{
+	INTEGER i;
+	
+	i = GetLastModifiedArrayIndex();
+	
+	myBox.mixerLevels[i - 1] = Mixer_Level_In[i];
+}
+
+THREADSAFE PUSH Mixer_Take_New_Levels
+{
+	INTEGER i;
+	
+	myBox.SetMixerLevels();
+	
+	For (i = 1 To 4)
+	{
+		Mixer_Level_Fb[i] = myBox.mixerLevels[i - 1];
+	}
+}
+
+// --- Main() ---------------------------------------------------------------
+
+Function Main()
+{
+    WaitForInitializationComplete();
+}
